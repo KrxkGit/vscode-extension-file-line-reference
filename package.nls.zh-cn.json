@@ -1,0 +1,5 @@
+{
+    "command.copyFileLine": "复制 文件名:行号",
+    "command.copyFileFunction": "复制 文件名:函数名",
+    "command.copyFileLineFunction": "复制 文件名:行号:函数名"
+}

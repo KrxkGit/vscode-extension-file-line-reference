@@ -5,11 +5,12 @@ When taking the CS5010 Program Design Paradigms, referencing line numbers and th
 ## Usage
 
 - Copy the file name with selected line numbers: `alt + y` (Windows) or `ctrl + y` (macOS)
-- Copy the file name with selected line numbers and possibly function name: `alt + u` (Windows) or `ctrl + u` (macOS)
+- Copy the possibly function name with selected line numbers: `alt + u` (Windows) or `ctrl + u` (macOS)
+- Copy the file name with selected line numbers and possibly function name: `alt + h` (Windows) or `ctrl + h` (macOS)
 
 ## Limitations
 
-1. Copying function name only works for Java currently.
+1. Copying function name only works for Java、C/C++/Objective-C/C++(require Clangd installed) currently.
 
 ## License
 

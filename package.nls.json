@@ -1,0 +1,5 @@
+{
+    "command.copyFileLine": "Copy File:Line",
+    "command.copyFileFunction": "Copy File:Function",
+    "command.copyFileLineFunction": "Copy File:Line:Function"
+}

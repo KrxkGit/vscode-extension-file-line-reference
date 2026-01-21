@@ -2,7 +2,7 @@
   "name": "file-line-reference",
   "displayName": "File Line Reference",
   "description": "A VSCode extension provides a reference to lines and, if applicable, a function name within a file.",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "publisher": "hankbao",
   "repository": {
     "type": "git",
@@ -26,15 +26,20 @@
     "Other"
   ],
   "main": "./out/extension.js",
+  "activationEvents": [],
   "contributes": {
     "commands": [
       {
         "command": "file-line-reference.copy-file-line",
-        "title": "Copy File Name and Line Numbers"
+        "title": "%command.copyFileLine%"
+      },
+      {
+        "command": "file-line-reference.copy-file-function",
+        "title": "%command.copyFileFunction%"
       },
       {
         "command": "file-line-reference.copy-file-line-function",
-        "title": "Copy File Name and Line Numbers with Function Name"
+        "title": "%command.copyFileLineFunction%"
       }
     ],
     "keybindings": [
@@ -45,19 +50,31 @@
         "when": "editorTextFocus"
       },
       {
-        "command": "file-line-reference.copy-file-line-function",
+        "command": "file-line-reference.copy-file-function",
         "key": "alt+u",
         "mac": "ctrl+u",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "file-line-reference.copy-file-line-function",
+        "key": "alt+h",
+        "mac": "ctrl+h",
         "when": "editorTextFocus"
       }
     ],
     "menus": {
       "editor/context": [
         {
-          "command": "file-line-reference.copy-file-line"
+          "command": "file-line-reference.copy-file-line",
+          "group": "file-line-referenc@1"
         },
         {
-          "command": "file-line-reference.copy-file-line-function"
+          "command": "file-line-reference.copy-file-function",
+          "group": "file-line-referenc@2"
+        },
+        {
+          "command": "file-line-reference.copy-file-line-function",
+          "group": "file-line-referenc@3"
         }
       ]
     }

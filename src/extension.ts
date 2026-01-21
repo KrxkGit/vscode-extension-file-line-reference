@@ -1,95 +1,143 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-    let imp = function (guessFunctionName: boolean) {
-        let msg = 'Unable to find a file name';
 
+    // 核心实现函数
+    let imp = async function (includeLine: boolean, includeFunc: boolean) {
         let editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            vscode.window.showErrorMessage(msg);
+        if (!editor || editor.document.isUntitled) {
             return '';
         }
 
         let doc = editor.document;
-        if (doc.isUntitled) {
-            vscode.window.showErrorMessage(msg);
-            return '';
-        }
+        let output = doc.fileName.split(/[\\/]/).pop() || '';
 
-        let output = '';
-        output += getFileName(doc.fileName);
-
-        let lineNumber = '';
-        if (editor.selection.isEmpty) {
-            lineNumber += editor.selection.active.line + 1;
-        } else {
-            let start = editor.selection.start.line + 1;
-            let end = editor.selection.end.line + 1;
-            if (start === end) {
-                lineNumber += start;
+        // 1. 处理行号
+        if (includeLine) {
+            if (editor.selection.isEmpty) {
+                output += ':' + (editor.selection.active.line + 1);
             } else {
-                lineNumber += start + '-' + end;
+                let start = editor.selection.start.line + 1;
+                let end = editor.selection.end.line + 1;
+                output += (start === end) ? `:${start}` : `:${start}-${end}`;
             }
         }
 
-        output += ':' + lineNumber;
+        // 2. 处理函数名
+        if (includeFunc) {
+            const langId = doc.languageId;
+            let funcPart = '';
 
-        if (guessFunctionName) {
-            let lines = editor.document.getText(editor.selection).split('\n');
-            for (const line of lines) {
-                // TODO: This regex only works for Java currently
-                let regex = /\s*\b(?:public|private)?\s*(?:static)?\s*\w+\s+(\w+)\s*\(/g;
-                let match = regex.exec(line);
-                if (match) {
-                    output += ':' + match[1] + '()';
-                    break;
+            // 如果是 Java，直接使用你原来的正则回退逻辑
+            if (langId === 'java') {
+                let text = doc.getText(editor.selection);
+                if (!text) text = doc.lineAt(editor.selection.active.line).text;
+
+                let lines = text.split('\n');
+                for (const line of lines) {
+                    let regex = /\s*\b(?:public|private)?\s*(?:static)?\s*\w+\s+(\w+)\s*\(/g;
+                    let match = regex.exec(line);
+                    if (match) {
+                        funcPart = ':' + match[1] + '()';
+                        break;
+                    }
                 }
             }
+            // 如果是 C/C++/ObjC，使用 LSP
+            else if (['c', 'cpp', 'objective-c', 'objective-cpp'].includes(langId)) {
+                funcPart = await getLspFunctionName(doc, editor.selection.active);
+            }
+
+            output += funcPart;
         }
 
         return output;
     };
 
-    let getFileName = function (path: string) {
-        let separator = (path.indexOf('\\') !== -1) ? '\\' : '/';
-        return path.split(separator).pop();
+    async function getLspFunctionName(doc: vscode.TextDocument, pos: vscode.Position): Promise<string> {
+        try {
+            const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
+                'vscode.executeDocumentSymbolProvider',
+                doc.uri
+            );
+
+            if (!symbols) return '';
+            const info = findSymbolWithParent(symbols, pos);
+            if (!info) return '';
+
+            const { symbol, container } = info;
+            const langId = doc.languageId;
+            let name = symbol.name;
+
+            // --- C/C++ 增强解析 ---
+            if (langId === 'cpp' || langId === 'c') {
+                /* 方案：利用 clangd 的 symbol.detail。
+                   在较新版本的 clangd 中，如果提供了 compile_commands.json，
+                   symbol.detail 通常存储的是 "(int task_id, string name)" 这样的签名。
+                */
+                if (symbol.detail) {
+                    // 1. 如果 detail 已经是括号开头的参数列表
+                    if (symbol.detail.startsWith('(')) {
+                        name = `${symbol.name}${symbol.detail}`;
+                    }
+                    // 2. 如果 detail 是返回类型 (如 "void (uint64_t)")，提取括号部分
+                    else if (symbol.detail.includes('(')) {
+                        const parenMatch = symbol.detail.match(/\(.*\)/);
+                        if (parenMatch) {
+                            name = `${symbol.name}${parenMatch[0]}`;
+                        }
+                    }
+                }
+
+                // 拼接 C++ 类名作用域
+                if (container && (container.kind === vscode.SymbolKind.Class || container.kind === vscode.SymbolKind.Struct)) {
+                    name = `${container.name}::${name}`;
+                }
+            }
+            // --- ObjC 处理 ---
+            else if (langId.startsWith('objective')) {
+                if (container && (container.kind === vscode.SymbolKind.Class || container.kind === vscode.SymbolKind.Interface)) {
+                    return `:[${container.name} ${name}]`;
+                }
+            }
+
+            // 补全括号安全检查
+            if (!name.includes('(') && !langId.startsWith('objective')) {
+                name += '()';
+            }
+
+            return `:${name}`;
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function findSymbolWithParent(symbols: vscode.DocumentSymbol[], pos: vscode.Position, parent?: vscode.DocumentSymbol): any {
+        for (const s of symbols) {
+            if (s.range.contains(pos)) {
+                if (s.children && s.children.length > 0) {
+                    const child = findSymbolWithParent(s.children, pos, s);
+                    if (child) return child;
+                }
+                if ([vscode.SymbolKind.Function, vscode.SymbolKind.Method, vscode.SymbolKind.Constructor].includes(s.kind)) {
+                    return { symbol: s, container: parent };
+                }
+            }
+        }
+        return undefined;
+    }
+
+    const copy = async (l: boolean, f: boolean) => {
+        const msg = await imp(l, f);
+        if (msg) {
+            await vscode.env.clipboard.writeText(msg);
+            vscode.window.setStatusBarMessage(`"${msg}" copied`, 3000);
+        }
     };
 
-    let showMessage = function (msg: string) {
-        vscode.window.setStatusBarMessage('"' + msg + '"' + 'copied', 3000);
-    };
-
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "file-line-reference" is now active!');
-
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	let copyFileLine = vscode.commands.registerCommand('file-line-reference.copy-file-line', () => {
-        let msg = imp(false);
-        if (msg !== '') {
-            vscode.env.clipboard.writeText(msg).then(() => {
-                showMessage(msg);
-            });
-        }
-	});
-
-    let copyFileLineFunction = vscode.commands.registerCommand('file-line-reference.copy-file-line-function', () => {
-        let msg = imp(true);
-        if (msg !== '') {
-            vscode.env.clipboard.writeText(msg).then(() => {
-                showMessage(msg);
-            });
-        }
-    });
-
-	context.subscriptions.push(copyFileLine, copyFileLineFunction);
+    context.subscriptions.push(
+        vscode.commands.registerCommand('file-line-reference.copy-file-line', () => copy(true, false)),
+        vscode.commands.registerCommand('file-line-reference.copy-file-function', () => copy(false, true)),
+        vscode.commands.registerCommand('file-line-reference.copy-file-line-function', () => copy(true, true))
+    );
 }
-
-// This method is called when your extension is deactivated
-export function deactivate() {}
